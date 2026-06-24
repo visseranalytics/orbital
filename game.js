@@ -366,6 +366,21 @@
     ensureAhead();
   }
 
+  // Earned between-levels warp: advance one level, landing on the next boundary,
+  // and pay it out through the destination's normal level-up (banner/bonus/theme).
+  function hyperjumpWarp() {
+    hyperjumped = true;
+    hyperjumpTime = time;
+    warpFromX = cam.x; warpFromY = cam.y;
+    warpTo(currentIndex + HYPERJUMP_SKIP);
+    const destLevel = Math.floor(currentIndex / PLANETS_PER_LEVEL) + 1;
+    if (destLevel > level) levelUp(destLevel);   // LEVEL banner + bonus + theme
+    shake = Math.max(shake, 16);
+    flash = 0.5; flashHue = 205;                 // cool-blue warp flash (milestone)
+    spawnBurst(orb.x, orb.y, 205, 46, 2.8);
+    Audio.hyperjump();
+  }
+
   function capture(p, idx) {
     attachToPlanet(p, { x: orb.vx, y: orb.vy });
     currentIndex = idx;
@@ -395,8 +410,17 @@
     globalHue = 200 + currentIndex * 4;
 
     // Level progression — every PLANETS_PER_LEVEL captured planets.
+    const prevLevel = level;
     const newLevel = Math.floor(currentIndex / PLANETS_PER_LEVEL) + 1;
     if (newLevel > level) levelUp(newLevel);
+
+    // Earned between-levels warp (one-shot). At a level-boundary clear, if the
+    // multiplier is capped (earned) or we've hit the fallback level, warp one
+    // level forward and pay it out as the destination level-up.
+    if (!hyperjumped && newLevel > prevLevel &&
+        (mult >= MULT_CAP || newLevel >= HYPERJUMP_FALLBACK_LEVEL)) {
+      hyperjumpWarp();
+    }
   }
 
   function levelUp(newLevel) {
@@ -1009,6 +1033,7 @@
     get combo() { return combo; },
     get mult() { return mult; },
     get level() { return level; },
+    get hyperjumped() { return hyperjumped; },
     get index() { return currentIndex; },
     get best() { return best; },
     get aim() { return aimAlignment(); },
