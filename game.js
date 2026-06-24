@@ -116,6 +116,13 @@
       },
       perfect() { tone(1318, 1976, 0.12, 'triangle', 0.20); tone(2637, 2637, 0.06, 'sine', 0.06); },
       star() { tone(1040, 1560, 0.10, 'triangle', 0.18); },
+      hyperjump() {
+        // accelerating warp whoosh: pitch sweeps up, noise filter opens
+        tone(140, 1500, 0.75, 'sawtooth', 0.16);
+        tone(70, 760, 0.75, 'sine', 0.12);
+        noise(0.75, 0.14, 240, 7000);
+        tone(900, 2400, 0.5, 'triangle', 0.06);
+      },
       levelup() {
         // bright rising arpeggio
         tone(523, 784, 0.16, 'triangle', 0.20);
@@ -144,6 +151,9 @@
   let mult = 1;               // scoring multiplier — grows on clean shots, decays on a graze
   let level = 1;              // current level (every PLANETS_PER_LEVEL planets = +1)
   let launched = false;       // has the player taken their first launch this run?
+  let hyperjumped = false;    // one-shot hidden hyperjump fired this run?
+  let hyperjumpTime = -10;    // time it last fired (drives warp animation + banner)
+  let warpFromX = 0, warpFromY = 0;  // camera position captured at the warp's start
   let best = store.best;
   let bestLevel = store.bestLevel;
   let popups = [];            // floating score / grade labels in world space
@@ -226,6 +236,8 @@
     mult = 1;
     level = 1;
     launched = false;
+    hyperjumped = false;
+    hyperjumpTime = -10;
     bannerTime = -10;
     flightTime = 0;
     globalHue = 220;
@@ -260,6 +272,11 @@
   // ---------- Shot grading & multiplier ----------
   const MULT_CAP = 9;
   const PLANETS_PER_LEVEL = 8;
+  const WARP_DUR = 0.9;                 // seconds the warp animation runs after a jump
+  const HYPERJUMP_SKIP = 8;             // planets warped (one level)
+  const HYPERJUMP_FALLBACK_LEVEL = 3;   // guaranteed warp by this level clear
+  function warping() { return time - hyperjumpTime < WARP_DUR; }
+  function warpT() { return clamp(1 - (time - hyperjumpTime) / WARP_DUR, 0, 1); }
   // Tiers keyed by launch deviation (radians between launch line and the
   // straight line to the next planet). Lower index = sloppier.
   //   base   — raw points before the multiplier
@@ -329,6 +346,24 @@
     flightTime = 0;
     Audio.launch();
     spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 8, 1.4);
+  }
+
+  // Instantly move the orb to a far-ahead planet (the hyperjump). Re-anchors it
+  // on the destination's orbit; the camera is NOT snapped (it sweeps in over the
+  // warp, see update()), and the off-screen death check is suspended while
+  // warping() so the orb can sit off-screen until the camera arrives.
+  function warpTo(index) {
+    while (planets.length <= index) generateNext();
+    currentIndex = index;
+    const p = planets[index];
+    orb.mode = 'orbit';
+    orb.planet = p;
+    orb.angle = Math.PI / 2;            // arrive at the bottom of the orbit
+    orb.x = p.x + Math.cos(orb.angle) * p.orbitGap;
+    orb.y = p.y + Math.sin(orb.angle) * p.orbitGap;
+    p.pulse = 1;
+    trail = [];
+    ensureAhead();
   }
 
   function capture(p, idx) {
@@ -427,6 +462,7 @@
       // the aim line and pick your moment. Your next tap is your first launch.
       state = ST.PLAYING;
     } else if (state === ST.PLAYING) {
+      if (warping()) return;   // ignore taps mid-warp; the jump is on rails
       launch();
     } else if (state === ST.DEAD) {
       if (time - deathTime > 0.6) {
@@ -459,9 +495,18 @@
     const anchor = planets[currentIndex];
     const tx = anchor.x - view.w * 0.5;
     const ty = anchor.y - view.h * 0.68;
-    const k = clamp(dt * 4.5, 0, 1);
-    cam.x = lerp(cam.x, tx, k);
-    cam.y = lerp(cam.y, ty, k);
+    if (warping()) {
+      // hyperjump: sweep the camera forward across the skipped level, eased, so
+      // the jump reads as fast forward travel
+      const p = 1 - warpT();
+      const e = p * p * (3 - 2 * p);    // smoothstep
+      cam.x = lerp(warpFromX, tx, e);
+      cam.y = lerp(warpFromY, ty, e);
+    } else {
+      const k = clamp(dt * 4.5, 0, 1);
+      cam.x = lerp(cam.x, tx, k);
+      cam.y = lerp(cam.y, ty, k);
+    }
 
     // planet pulses & spin
     for (const p of planets) { p.pulse *= Math.pow(0.0025, dt); p.spin += dt * 0.4; }
@@ -520,8 +565,9 @@
           }
         }
 
-        // death checks: off-screen or stuck flying too long
-        if (state === ST.PLAYING) {
+        // death checks: off-screen or stuck flying too long. Suspended during a
+        // warp — the orb is intentionally off-screen while the camera sweeps in.
+        if (state === ST.PLAYING && !warping()) {
           const sx = orb.x - cam.x, sy = orb.y - cam.y;
           const M = 96;
           if (sx < -M || sx > view.w + M || sy < -M || sy > view.h + M || flightTime > 4) {
@@ -586,9 +632,22 @@
       if (x < 0) x += view.w;
       if (y < 0) y += view.h;
       const tw = 0.55 + 0.45 * Math.sin(time * 2 + st.tw);
-      ctx.globalAlpha = (0.25 + st.z * 0.6) * tw;
-      ctx.fillStyle = '#cfe3ff';
-      ctx.fillRect(x, y, st.s, st.s);
+      if (warpT() > 0.02) {
+        // hyperjump: stars stretch into warp-speed streaks trailing the travel
+        const w = warpT();
+        const len = (12 + st.z * 130) * w * w;   // closer stars streak longest
+        ctx.strokeStyle = hsl(210, 80, 88, (0.35 + st.z * 0.55) * Math.min(1, tw + 0.4));
+        ctx.lineWidth = st.s * (1 + 1.6 * w);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + len);
+        ctx.stroke();
+      } else {
+        ctx.globalAlpha = (0.25 + st.z * 0.6) * tw;
+        ctx.fillStyle = '#cfe3ff';
+        ctx.fillRect(x, y, st.s, st.s);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -850,6 +909,22 @@
       if (!launched) {
         ctx.globalAlpha = pulse;
         text('tap to launch when the line turns green', view.w / 2, view.h * 0.86, 16, '#ffffff', 'center', '700');
+        ctx.globalAlpha = 1;
+      }
+
+      // HYPERJUMP banner during/after a warp.
+      const hjAge = time - hyperjumpTime;
+      if (hjAge < 2.2) {
+        const a = hjAge < 0.18 ? hjAge / 0.18 : 1 - clamp((hjAge - 1.3) / 0.9, 0, 1);
+        const pop = 1 + 0.5 * Math.exp(-hjAge * 5);
+        ctx.save();
+        ctx.globalAlpha = clamp(a, 0, 1);
+        ctx.shadowColor = 'rgba(150,205,255,0.95)';
+        ctx.shadowBlur = 28;
+        text('HYPERJUMP', view.w / 2, view.h * 0.30, Math.min(view.w * 0.14, 48) * pop, 'rgba(230,242,255,0.97)', 'center', '900');
+        ctx.shadowBlur = 0;
+        text('engaged', view.w / 2, view.h * 0.30 + 30, 15, 'rgba(200,225,255,0.85)', 'center', '700');
+        ctx.restore();
         ctx.globalAlpha = 1;
       }
     } else if (state === ST.MENU) {
