@@ -131,6 +131,9 @@
   let currentIndex = 0;       // planet the orb belongs to
   let score = 0;
   let combo = 0;
+  let clearStreak = 0;
+  let hyperjumped = false;
+  let hyperjumpTime = -10;
   let best = store.best;
 
   let cam = { x: 0, y: 0 };
@@ -205,6 +208,9 @@
     currentIndex = 0;
     score = 0;
     combo = 0;
+    clearStreak = 0;
+    hyperjumped = false;
+    hyperjumpTime = -10;
     flightTime = 0;
     globalHue = 220;
 
@@ -248,12 +254,32 @@
     p.pulse = 1;
     score += 1;
     combo += 1;
+    clearStreak += 1;
     ensureAhead();
     shake = Math.min(shake + 5, 14);
     flash = 0.28; flashHue = p.hue;
     spawnBurst(orb.x, orb.y, p.hue, 16 + Math.min(combo, 16), 2.0);
     Audio.capture(combo);
     globalHue = 200 + currentIndex * 4;
+
+    if (!hyperjumped && clearStreak >= 20 && currentIndex <= 25) {
+      hyperjumped = true;
+      hyperjumpTime = time;
+      const destinationIndex = currentIndex + 20;
+      while (planets.length <= destinationIndex) generateNext();
+      for (let i = currentIndex + 1; i <= destinationIndex; i++) planets[i].reached = true;
+      currentIndex = destinationIndex;
+      score += 20;
+      combo += 20;
+      trail = [];
+      attachToPlanet(planets[currentIndex], null);
+      planets[currentIndex].pulse = 1;
+      ensureAhead();
+      shake = 12;
+      flash = 0.45; flashHue = planets[currentIndex].hue;
+      spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 42, 2.6);
+      globalHue = 200 + currentIndex * 4;
+    }
   }
 
   function die() {
@@ -652,6 +678,9 @@
       if (combo >= 3) {
         text(`x${combo} streak`, view.w / 2, topPad + 52, 15, hsl((time * 90) % 360, 90, 75), 'center', '700');
       }
+      if (time - hyperjumpTime < 2.2) {
+        text('Hyperjump engaged', view.w / 2, view.h * 0.2, 18, 'rgba(210,235,255,0.9)', 'center', '700');
+      }
       text(`BEST ${best}`, 16, topPad, 13, 'rgba(255,255,255,0.55)', 'left', '600');
     } else if (state === ST.MENU) {
       const cx = view.w / 2;
@@ -713,6 +742,8 @@
     get state() { return state; },
     get score() { return score; },
     get combo() { return combo; },
+    get clearStreak() { return clearStreak; },
+    get hyperjumped() { return hyperjumped; },
     get index() { return currentIndex; },
     get best() { return best; },
     get orb() {
