@@ -113,6 +113,13 @@
         tone(f * 2, f * 2, 0.08, 'sine', 0.08);
       },
       star() { tone(1040, 1560, 0.10, 'triangle', 0.18); },
+      hyperjump() {
+        // accelerating warp whoosh: pitch sweeps up, noise filter opens up
+        tone(140, 1500, 0.75, 'sawtooth', 0.16);
+        tone(70, 760, 0.75, 'sine', 0.12);
+        noise(0.75, 0.14, 240, 7000);
+        tone(900, 2400, 0.5, 'triangle', 0.06);
+      },
       death() { tone(220, 50, 0.55, 'sawtooth', 0.22); noise(0.5, 0.25, 1200, 120); },
     };
   })();
@@ -131,9 +138,9 @@
   let currentIndex = 0;       // planet the orb belongs to
   let score = 0;
   let combo = 0;
-  let clearStreak = 0;
-  let hyperjumped = false;
-  let hyperjumpTime = -10;
+  let hyperjumped = false;     // has the one-shot hidden hyperjump fired this run?
+  let hyperjumpTime = -10;     // time it last fired (drives the warp animation + banner)
+  let warpFromX = 0, warpFromY = 0;  // camera position captured at the warp's start
   let best = store.best;
 
   let cam = { x: 0, y: 0 };
@@ -145,6 +152,15 @@
   let globalHue = 220;
 
   const ORB_R = 9;
+
+  // Hidden hyperjump: once per run, reaching this many planet-clears warps the
+  // orb this many planets ahead. (clears == currentIndex, so it fires at planet 20.)
+  const HYPERJUMP_AT = 20;
+  const HYPERJUMP_SKIP = 20;
+  const WARP_DUR = 0.9;        // seconds the warp-speed animation runs after a jump
+  // Is the warp animation playing right now, and how intense (1 at jump -> 0 at end)?
+  function warping() { return time - hyperjumpTime < WARP_DUR; }
+  function warpT() { return clamp(1 - (time - hyperjumpTime) / WARP_DUR, 0, 1); }
 
   // ---------- World generation ----------
   function planetRadius(level) { return clamp(30 - level * 0.6, 15, 30); }
@@ -208,7 +224,6 @@
     currentIndex = 0;
     score = 0;
     combo = 0;
-    clearStreak = 0;
     hyperjumped = false;
     hyperjumpTime = -10;
     flightTime = 0;
@@ -247,6 +262,27 @@
     spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 8, 1.4);
   }
 
+  // Instantly move the orb to a far-ahead planet (the hyperjump). Re-anchors it
+  // on the destination's orbit and SNAPS the camera to frame it — the snap is
+  // The camera is NOT snapped here — it sweeps in over the warp (see update()),
+  // and the off-screen death check is suspended while warping() so the orb can
+  // sit off-screen at the destination until the camera arrives.
+  function warpTo(index) {
+    while (planets.length <= index) generateNext();
+    currentIndex = index;
+    const p = planets[index];
+    // arrive at the bottom of the orbit (where a flight would come in), keeping
+    // the orb's current spin direction for visual continuity
+    orb.mode = 'orbit';
+    orb.planet = p;
+    orb.angle = Math.PI / 2;
+    orb.x = p.x + Math.cos(orb.angle) * p.orbitGap;
+    orb.y = p.y + Math.sin(orb.angle) * p.orbitGap;
+    p.pulse = 1;
+    trail = [];
+    ensureAhead();
+  }
+
   function capture(p, idx) {
     attachToPlanet(p, { x: orb.vx, y: orb.vy });
     currentIndex = idx;
@@ -254,7 +290,6 @@
     p.pulse = 1;
     score += 1;
     combo += 1;
-    clearStreak += 1;
     ensureAhead();
     shake = Math.min(shake + 5, 14);
     flash = 0.28; flashHue = p.hue;
@@ -262,23 +297,21 @@
     Audio.capture(combo);
     globalHue = 200 + currentIndex * 4;
 
-    if (!hyperjumped && clearStreak >= 20 && currentIndex <= 25) {
+    // Hidden hyperjump: one-shot, fires the first time you reach HYPERJUMP_AT
+    // clears. (clears == currentIndex here, so the old `currentIndex <= 25`
+    // upper guard was dead and has been dropped.)
+    if (!hyperjumped && currentIndex >= HYPERJUMP_AT) {
       hyperjumped = true;
       hyperjumpTime = time;
-      const destinationIndex = currentIndex + 20;
-      while (planets.length <= destinationIndex) generateNext();
-      for (let i = currentIndex + 1; i <= destinationIndex; i++) planets[i].reached = true;
-      currentIndex = destinationIndex;
-      score += 20;
-      combo += 20;
-      trail = [];
-      attachToPlanet(planets[currentIndex], null);
-      planets[currentIndex].pulse = 1;
-      ensureAhead();
-      shake = 12;
-      flash = 0.45; flashHue = planets[currentIndex].hue;
-      spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 42, 2.6);
+      warpFromX = cam.x; warpFromY = cam.y;   // remember where the sweep starts
+      warpTo(currentIndex + HYPERJUMP_SKIP);
+      score += HYPERJUMP_SKIP;
+      combo += HYPERJUMP_SKIP;
+      shake = Math.max(shake, 16);
+      flash = 0.5; flashHue = 205;             // cool blue-white warp flash
+      spawnBurst(orb.x, orb.y, 205, 46, 2.8);
       globalHue = 200 + currentIndex * 4;
+      Audio.hyperjump();
     }
   }
 
@@ -321,6 +354,7 @@
       state = ST.PLAYING;
       launch();
     } else if (state === ST.PLAYING) {
+      if (warping()) return;   // ignore taps mid-warp; the jump is on rails
       launch();
     } else if (state === ST.DEAD) {
       if (time - deathTime > 0.6) {
@@ -354,9 +388,18 @@
     const anchor = planets[currentIndex];
     const tx = anchor.x - view.w * 0.5;
     const ty = anchor.y - view.h * 0.68;
-    const k = clamp(dt * 4.5, 0, 1);
-    cam.x = lerp(cam.x, tx, k);
-    cam.y = lerp(cam.y, ty, k);
+    if (warping()) {
+      // hyperjump: sweep the camera forward across all skipped space over the
+      // warp, easing in and out, so the jump reads as fast forward travel.
+      const p = 1 - warpT();              // 0 -> 1 across the warp
+      const e = p * p * (3 - 2 * p);      // smoothstep
+      cam.x = lerp(warpFromX, tx, e);
+      cam.y = lerp(warpFromY, ty, e);
+    } else {
+      const k = clamp(dt * 4.5, 0, 1);
+      cam.x = lerp(cam.x, tx, k);
+      cam.y = lerp(cam.y, ty, k);
+    }
 
     // planet pulses & spin
     for (const p of planets) { p.pulse *= Math.pow(0.0025, dt); p.spin += dt * 0.4; }
@@ -413,8 +456,9 @@
           }
         }
 
-        // death checks: off-screen or stuck flying too long
-        if (state === ST.PLAYING) {
+        // death checks: off-screen or stuck flying too long. Suspended during a
+        // warp — the orb is intentionally off-screen while the camera sweeps in.
+        if (state === ST.PLAYING && !warping()) {
           const sx = orb.x - cam.x, sy = orb.y - cam.y;
           const M = 96;
           if (sx < -M || sx > view.w + M || sy < -M || sy > view.h + M || flightTime > 4) {
@@ -464,16 +508,31 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, view.w, view.h);
 
-    // parallax stars (screen space, scrolled by camera)
+    // parallax stars (screen space, scrolled by camera). During a hyperjump the
+    // stars stretch into warp-speed streaks trailing along the travel direction.
+    const w = warpT();
     for (const st of bgStars) {
       let x = (st.x * view.w - cam.x * st.z) % view.w;
       let y = (st.y * view.h - cam.y * st.z) % view.h;
       if (x < 0) x += view.w;
       if (y < 0) y += view.h;
       const tw = 0.55 + 0.45 * Math.sin(time * 2 + st.tw);
-      ctx.globalAlpha = (0.25 + st.z * 0.6) * tw;
-      ctx.fillStyle = '#cfe3ff';
-      ctx.fillRect(x, y, st.s, st.s);
+      if (w > 0.02) {
+        // closer (higher-z) stars streak longest; they trail downward as the
+        // camera rushes up toward the destination
+        const len = (12 + st.z * 130) * w * w;
+        ctx.strokeStyle = hsl(210, 80, 88, (0.35 + st.z * 0.55) * Math.min(1, tw + 0.4));
+        ctx.lineWidth = st.s * (1 + 1.6 * w);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + len);
+        ctx.stroke();
+      } else {
+        ctx.globalAlpha = (0.25 + st.z * 0.6) * tw;
+        ctx.fillStyle = '#cfe3ff';
+        ctx.fillRect(x, y, st.s, st.s);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -678,8 +737,19 @@
       if (combo >= 3) {
         text(`x${combo} streak`, view.w / 2, topPad + 52, 15, hsl((time * 90) % 360, 90, 75), 'center', '700');
       }
-      if (time - hyperjumpTime < 2.2) {
-        text('Hyperjump engaged', view.w / 2, view.h * 0.2, 18, 'rgba(210,235,255,0.9)', 'center', '700');
+      const hjAge = time - hyperjumpTime;
+      if (hjAge < 2.2) {
+        const a = hjAge < 0.18 ? hjAge / 0.18 : 1 - clamp((hjAge - 1.3) / 0.9, 0, 1);
+        const pop = 1 + 0.5 * Math.exp(-hjAge * 5);
+        ctx.save();
+        ctx.globalAlpha = clamp(a, 0, 1);
+        ctx.shadowColor = 'rgba(150,205,255,0.95)';
+        ctx.shadowBlur = 28;
+        text('HYPERJUMP', view.w / 2, view.h * 0.30, Math.min(view.w * 0.14, 48) * pop, 'rgba(230,242,255,0.97)', 'center', '900');
+        ctx.shadowBlur = 0;
+        text('engaged', view.w / 2, view.h * 0.30 + 30, 15, 'rgba(200,225,255,0.85)', 'center', '700');
+        ctx.restore();
+        ctx.globalAlpha = 1;
       }
       text(`BEST ${best}`, 16, topPad, 13, 'rgba(255,255,255,0.55)', 'left', '600');
     } else if (state === ST.MENU) {
@@ -742,7 +812,6 @@
     get state() { return state; },
     get score() { return score; },
     get combo() { return combo; },
-    get clearStreak() { return clearStreak; },
     get hyperjumped() { return hyperjumped; },
     get index() { return currentIndex; },
     get best() { return best; },
