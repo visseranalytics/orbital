@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#15183a"/>
+      <stop offset="100%" stop-color="#05060f"/>
+    </radialGradient>
+    <radialGradient id="planet" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#7fb2ff"/>
+      <stop offset="100%" stop-color="#2b56c9"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="70%" stop-color="#dcebff"/>
+      <stop offset="100%" stop-color="#9cc0ff"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="120" cy="110" r="3" fill="#cfe3ff" opacity="0.8"/>
+  <circle cx="410" cy="150" r="2.5" fill="#cfe3ff" opacity="0.7"/>
+  <circle cx="360" cy="80" r="2" fill="#cfe3ff" opacity="0.6"/>
+  <circle cx="90" cy="360" r="2.5" fill="#cfe3ff" opacity="0.7"/>
+  <circle cx="430" cy="400" r="3" fill="#cfe3ff" opacity="0.6"/>
+  <ellipse cx="256" cy="266" rx="150" ry="150" fill="none" stroke="#8fb6ff" stroke-width="6" stroke-dasharray="10 16" opacity="0.45"/>
+  <circle cx="256" cy="266" r="92" fill="url(#planet)"/>
+  <circle cx="256" cy="266" r="92" fill="none" stroke="#aeccff" stroke-width="3" opacity="0.5"/>
+  <circle cx="256" cy="116" r="26" fill="url(#orb)"/>
+  <circle cx="256" cy="116" r="40" fill="#bcd6ff" opacity="0.25"/>
+</svg>

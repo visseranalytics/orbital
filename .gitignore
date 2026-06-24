@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+.AppleDouble
+Icon?
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# Node (only if you later add tooling)
+node_modules/
+npm-debug.log*
+
+# Deploy / env
+.vercel
+.env
+.env.*
+.wrangler/
+dist/
