@@ -1,7 +1,7 @@
 {
   "name": "ORBITAL",
   "short_name": "ORBITAL",
-  "description": "A one-thumb arcade game. Tap to fling between planets and climb as high as you can.",
+  "description": "A one-thumb arcade game. Tap to fling your orb between planets and climb as high as you can. Straight shots build your multiplier.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
