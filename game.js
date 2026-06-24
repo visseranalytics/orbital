@@ -403,7 +403,9 @@
 
     ensureAhead();
     shake = Math.min(shake + 5, 14);
-    flash = (tier.name === 'PERFECT' ? 0.4 : 0.28); flashHue = tier.hue;
+    // Land flash reserved for milestones — only PERFECT captures flash; GOOD/
+    // GREAT/GRAZE rely on shake + burst + planet pulse (no full-screen wash).
+    if (tier.name === 'PERFECT') { flash = 0.4; flashHue = tier.hue; }
     spawnBurst(orb.x, orb.y, p.hue, 16 + Math.min(combo, 16), 2.0);
     Audio.capture(combo);
     if (tier.name === 'PERFECT') Audio.perfect();
