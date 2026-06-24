@@ -131,9 +131,8 @@
   let currentIndex = 0;       // planet the orb belongs to
   let score = 0;
   let combo = 0;
-  let clearStreak = 0;
-  let hyperjumped = false;
-  let hyperjumpTime = -10;
+  let hyperjumped = false;     // has the one-shot hidden hyperjump fired this run?
+  let hyperjumpTime = -10;     // time it last fired (drives the on-screen banner)
   let best = store.best;
 
   let cam = { x: 0, y: 0 };
@@ -145,6 +144,11 @@
   let globalHue = 220;
 
   const ORB_R = 9;
+
+  // Hidden hyperjump: once per run, reaching this many planet-clears warps the
+  // orb this many planets ahead. (clears == currentIndex, so it fires at planet 20.)
+  const HYPERJUMP_AT = 20;
+  const HYPERJUMP_SKIP = 20;
 
   // ---------- World generation ----------
   function planetRadius(level) { return clamp(30 - level * 0.6, 15, 30); }
@@ -208,7 +212,6 @@
     currentIndex = 0;
     score = 0;
     combo = 0;
-    clearStreak = 0;
     hyperjumped = false;
     hyperjumpTime = -10;
     flightTime = 0;
@@ -247,6 +250,28 @@
     spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 8, 1.4);
   }
 
+  // Instantly move the orb to a far-ahead planet (the hyperjump). Re-anchors it
+  // on the destination's orbit and SNAPS the camera to frame it — the snap is
+  // load-bearing: without it the off-screen death check in update() runs on the
+  // same frame against a stale camera and kills the orb.
+  function warpTo(index) {
+    while (planets.length <= index) generateNext();
+    currentIndex = index;
+    const p = planets[index];
+    // arrive at the bottom of the orbit (where a flight would come in), keeping
+    // the orb's current spin direction for visual continuity
+    orb.mode = 'orbit';
+    orb.planet = p;
+    orb.angle = Math.PI / 2;
+    orb.x = p.x + Math.cos(orb.angle) * p.orbitGap;
+    orb.y = p.y + Math.sin(orb.angle) * p.orbitGap;
+    p.pulse = 1;
+    trail = [];
+    ensureAhead();
+    cam.x = p.x - view.w * 0.5;
+    cam.y = p.y - view.h * 0.68;
+  }
+
   function capture(p, idx) {
     attachToPlanet(p, { x: orb.vx, y: orb.vy });
     currentIndex = idx;
@@ -254,7 +279,6 @@
     p.pulse = 1;
     score += 1;
     combo += 1;
-    clearStreak += 1;
     ensureAhead();
     shake = Math.min(shake + 5, 14);
     flash = 0.28; flashHue = p.hue;
@@ -262,22 +286,19 @@
     Audio.capture(combo);
     globalHue = 200 + currentIndex * 4;
 
-    if (!hyperjumped && clearStreak >= 20 && currentIndex <= 25) {
+    // Hidden hyperjump: one-shot, fires the first time you reach HYPERJUMP_AT
+    // clears. (clears == currentIndex here, so the old `currentIndex <= 25`
+    // upper guard was dead and has been dropped.)
+    if (!hyperjumped && currentIndex >= HYPERJUMP_AT) {
       hyperjumped = true;
       hyperjumpTime = time;
-      const destinationIndex = currentIndex + 20;
-      while (planets.length <= destinationIndex) generateNext();
-      for (let i = currentIndex + 1; i <= destinationIndex; i++) planets[i].reached = true;
-      currentIndex = destinationIndex;
-      score += 20;
-      combo += 20;
-      trail = [];
-      attachToPlanet(planets[currentIndex], null);
-      planets[currentIndex].pulse = 1;
-      ensureAhead();
-      shake = 12;
-      flash = 0.45; flashHue = planets[currentIndex].hue;
-      spawnBurst(orb.x, orb.y, planets[currentIndex].hue, 42, 2.6);
+      warpTo(currentIndex + HYPERJUMP_SKIP);
+      score += HYPERJUMP_SKIP;
+      combo += HYPERJUMP_SKIP;
+      const hue = planets[currentIndex].hue;
+      shake = Math.max(shake, 14);
+      flash = 0.45; flashHue = hue;
+      spawnBurst(orb.x, orb.y, hue, 42, 2.6);
       globalHue = 200 + currentIndex * 4;
     }
   }
@@ -742,7 +763,6 @@
     get state() { return state; },
     get score() { return score; },
     get combo() { return combo; },
-    get clearStreak() { return clearStreak; },
     get hyperjumped() { return hyperjumped; },
     get index() { return currentIndex; },
     get best() { return best; },

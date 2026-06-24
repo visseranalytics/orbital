@@ -1,6 +1,6 @@
 /* ORBITAL service worker — offline-first caching.
    Bump CACHE when you ship changes so clients pick them up. */
-const CACHE = 'orbital-v2';
+const CACHE = 'orbital-v3';
 const ASSETS = [
   './',
   './index.html',
