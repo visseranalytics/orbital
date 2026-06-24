@@ -75,6 +75,8 @@ set (use "Other"/"static" if the host asks).
 - Clear a **level** every **8 planets**: the colors shift and you bank a bonus.
   The deeper you climb, the less gravity-assist you get and the tighter the catch
   window, so precise aim matters more and more.
+- Cap your **×multiplier** to earn a hidden **hyperjump** — a warp that launches
+  you a level forward. Don't cap it and you still get one by level 3.
 - Your best score and best level are saved automatically.
 
 ## Project layout
